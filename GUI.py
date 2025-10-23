@@ -1,23 +1,23 @@
+# GUI.py
 import sys
-import xlsxwriter
 
-from PyQt5.QtCore import Qt, pyqtSlot
-from PyQt5.QtGui import QPixmap, QTextItem
+from PyQt5.QtCore import pyqtSlot
 from PyQt5.QtWidgets import (
     QApplication,
-    QCheckBox,
-    QComboBox,
-    QDoubleSpinBox,
-    QLabel,
     QLineEdit,
-    QListWidget,
     QMainWindow,
-    QSlider,
-    QSpinBox, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QMessageBox, QTableWidgetItem, QTableWidget, QHeaderView,
+    QPushButton,
+    QVBoxLayout,
+    QHBoxLayout,
+    QWidget,
+    QMessageBox,
+    QTableWidgetItem,
+    QTableWidget,
+    QHeaderView,
 )
+from PyQt5.QtWidgets import QAbstractItemView
 
-from ToExcell import excel
-from ToExcell import products
+from ToExcell import excel, read_all, ensure_workbook
 
 
 class MainWindow(QMainWindow):
@@ -25,53 +25,71 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("Products")
-        self.setGeometry(200,200,1000,500)
+        self.setGeometry(200, 200, 1000, 500)
+
         self.InitUI()
 
-        self.row = 0
-        self.col = 0
-
+        # Ensure workbook exists and load existing rows
+        ensure_workbook()
+        self.load_from_xlsx()
 
     def InitUI(self):
-        self.name_box=QLineEdit()
+        self.name_box = QLineEdit()
         self.name_box.setPlaceholderText("Enter The Product Name")
 
-        self.url_box=QLineEdit()
+        self.url_box = QLineEdit()
         self.url_box.setPlaceholderText("Enter The Product URL")
 
-        self.add_button= QPushButton("Add Product",self)
+        self.add_button = QPushButton("Add Product", self)
         self.add_button.clicked.connect(self.add_click)
 
-        #  Create a table with 2 columns
+        # NEW: Remove button
+        self.remove_button = QPushButton("Remove Selected", self)
+        self.remove_button.clicked.connect(self.remove_selected)
+
+        # Table with 2 columns
         self.product_table = QTableWidget()
         self.product_table.setColumnCount(2)
         self.product_table.setHorizontalHeaderLabels(["Product Name", "Product URL"])
         self.product_table.horizontalHeader().setStretchLastSection(True)
-        self.product_table.horizontalHeader().setStretchLastSection(True)
         self.product_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
-        self.info_layout= QHBoxLayout()
-        self.info_layout.addWidget(self.name_box)
-        self.info_layout.addWidget(self.url_box)
-        self.info_layout.addWidget(self.add_button)
+        # Better selection UX for row deletion
+        self.product_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.product_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.product_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
-        self.list_layout=QHBoxLayout()
-        self.list_layout.addWidget(self.product_table)
+        # Layouts
+        info_layout = QHBoxLayout()
+        info_layout.addWidget(self.name_box)
+        info_layout.addWidget(self.url_box)
+        info_layout.addWidget(self.add_button)
+        info_layout.addWidget(self.remove_button)  # add the Remove button to the toolbar
 
-        self.main_layout=QVBoxLayout()
-        self.main_layout.addLayout(self.info_layout)
-        self.main_layout.addLayout(self.list_layout)
+        list_layout = QHBoxLayout()
+        list_layout.addWidget(self.product_table)
 
-        self.layout= QWidget(self)
-        self.layout.setLayout(self.main_layout)
-        self.setCentralWidget(self.layout)
+        main_layout = QVBoxLayout()
+        main_layout.addLayout(info_layout)
+        main_layout.addLayout(list_layout)
+
+        container = QWidget(self)
+        container.setLayout(main_layout)
+        self.setCentralWidget(container)
+
+    def load_from_xlsx(self):
+        """Load all existing rows from products.xlsx into the table."""
+        self.product_table.setRowCount(0)
+        for name, url in read_all():
+            row_position = self.product_table.rowCount()
+            self.product_table.insertRow(row_position)
+            self.product_table.setItem(row_position, 0, QTableWidgetItem(name or ""))
+            self.product_table.setItem(row_position, 1, QTableWidgetItem(url or ""))
 
     @pyqtSlot()
     def add_click(self):
         name = self.name_box.text().strip()
         url = self.url_box.text().strip()
-        excel(name,url,self.row,self.col)
-        self.row+=1
 
         if not name:
             QMessageBox.warning(self, "Missing name", "Please enter the product name.")
@@ -80,34 +98,79 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Missing URL", "Please enter the product URL.")
             return
 
+        # 1) Persist immediately to products.xlsx
+        try:
+            excel(name, url)
+        except Exception as e:
+            QMessageBox.critical(self, "Save error", f"Could not write to Excel:\n{e}")
+            return
+
+        # 2) Append to UI table
         row_position = self.product_table.rowCount()
         self.product_table.insertRow(row_position)
         self.product_table.setItem(row_position, 0, QTableWidgetItem(name))
         self.product_table.setItem(row_position, 1, QTableWidgetItem(url))
 
-
-        # Optionally clear the inputs
+        # 3) Clear inputs
         self.name_box.clear()
         self.url_box.clear()
 
+    # =========================
+    # NEW: Remove functionality
+    # =========================
+    def remove_selected(self):
+        """Remove selected rows from the table and rewrite products.xlsx."""
+        model = self.product_table.selectionModel()
+        selected = model.selectedRows() if model else []
+
+        if not selected:
+            QMessageBox.information(self, "No Selection", "Please select at least one row to remove.")
+            return
+
+        rows = sorted([idx.row() for idx in selected], reverse=True)
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete {len(rows)} product(s)?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        # Remove from table (from bottom to top to keep indices valid)
+        for r in rows:
+            self.product_table.removeRow(r)
+
+        # Rewrite Excel to mirror the current table
+        try:
+            self.save_table_to_excel()
+        except Exception as e:
+            QMessageBox.critical(self, "Excel Error", f"Failed to update products.xlsx:\n{e}")
+
+    def save_table_to_excel(self):
+        """Rewrite products.xlsx from the current table contents."""
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Products"
+        # Keep header compatible with Tracker.py and ToExcell.py
+        ws.append(["Item", "URL", "Price"])
+
+        for row in range(self.product_table.rowCount()):
+            name_item = self.product_table.item(row, 0)
+            url_item = self.product_table.item(row, 1)
+            name = name_item.text() if name_item else ""
+            url = url_item.text() if url_item else ""
+            ws.append([name, url, None])
+
+        wb.save("products.xlsx")
+        wb.close()
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-
-    # Ensure the workbook is closed when the app quits
-    def on_quit():
-        try:
-            products.close()
-        except Exception as e:
-            # You could log this if needed
-            print("Error closing workbook:", e)
-
-    app.aboutToQuit.connect(on_quit)
-
     window = MainWindow()
     window.show()
-
-    # Let the event loop return a code, then close cleanly, then exit.
-    ret = app.exec_()
-    # products.close() would already have been called via aboutToQuit,
-    # but calling it again is harmless—xlsxwriter ignores double-close.
-    sys.exit(ret)
+    sys.exit(app.exec_())
