@@ -49,8 +49,8 @@ class MainWindow(QMainWindow):
 
         # Table with 2 columns
         self.product_table = QTableWidget()
-        self.product_table.setColumnCount(2)
-        self.product_table.setHorizontalHeaderLabels(["Product Name", "Product URL"])
+        self.product_table.setColumnCount(5)
+        self.product_table.setHorizontalHeaderLabels(["Product Name", "Product URL","Current Price","Daily Change","Max Change"])
         self.product_table.horizontalHeader().setStretchLastSection(True)
         self.product_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
