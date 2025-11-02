@@ -24,14 +24,6 @@ It allows you to:
 ---
 
 
-## 🖥️ Requirements
-
-Install these Python packages before running:
-
-```bash
-pip install PyQt5 openpyxl xlsxwriter requests beautifulsoup4 lxml
-```
-
 ## 🧠 Technical Details
 
 
