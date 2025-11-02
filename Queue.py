@@ -1,80 +1,67 @@
 class CircularQueue:
     def __init__(self, size):
+        assert size > 0
         self.size = size
         self.queue = [None] * size
-        self.front = self.rear = -1
+        self.front = 0       # index of the oldest element
+        self.count = 0       # how many valid elements (0..size)
 
+    # add newest; overwrite oldest when full
     def enqueue(self, value):
-        if (self.rear + 1) % self.size == self.front:
-            print("Queue is full!")
-            return
-
-        if self.front == -1:
-            self.front = 0
-
-        self.rear = (self.rear + 1) % self.size
-        self.queue[self.rear] = value
+        insert = (self.front + self.count) % self.size
+        self.queue[insert] = value
+        if self.count == self.size:
+            self.front = (self.front + 1) % self.size   # drop oldest
+        else:
+            self.count += 1
 
     def dequeue(self):
-        if self.front == -1:
-            print("Queue is empty!")
+        if self.count == 0:
             return None
+        v = self.queue[self.front]
+        self.front = (self.front + 1) % self.size
+        self.count -= 1
+        return v
 
-        value = self.queue[self.front]
-
-        if self.front == self.rear:
-            self.front = self.rear = -1
-        else:
-            self.front = (self.front + 1) % self.size
-
-        return value
-
-    def find_max_diff(self):
-        global max, min
-        if self.front == -1:
-            print("Queue is empty")
-            return None
-
-        i = self.front
-        while True:
-            if self.queue[i]>=max:
-                max = self.queue[i]
-            if self.queue[i]<=min:
-                min = self.queue[i]
-            if i == self.rear:
-                break
-            i = (i + 1) % self.size
-        return max-min
-
-    def find_daily_diff(self):
-        if self.front == -1:
-            print("Queue is empty")
-            return 0
-
-        if self.front == self.rear:
-            return 0
-
-        prev = self.queue[self.rear - 1]
-        curr = self.queue[self.rear]
-
-        if prev in (None, 0):
-            return 0
-
-        return int(100-(curr * 100 / prev))
+    def _idx(self, i_from_oldest):
+        # helper: 0 is oldest, count-1 is newest
+        return (self.front + i_from_oldest) % self.size
 
     def get_last(self):
-        return self.queue[self.rear]
+        if self.count == 0:
+            return None
+        return self.queue[self._idx(self.count - 1)]
+
+    def find_max_diff(self):
+        if self.count == 0:
+            return None
+        max_price = float("-inf")
+        min_price = float("inf")
+        for i in range(self.count):
+            v = self.queue[self._idx(i)]
+            if v is None:
+                continue
+            if v > max_price: max_price = v
+            if v < min_price: min_price = v
+        if max_price == float("-inf"):   # all None
+            return None
+        return max_price - min_price
+
+    def find_daily_diff(self):
+        # percentage change from previous to latest: positive means drop
+        if self.count < 2:
+            return 0
+        prev = self.queue[self._idx(self.count - 2)]
+        curr = self.queue[self._idx(self.count - 1)]
+        if prev in (None, 0):
+            return 0
+        return int(100 - (curr * 100 / prev))
 
     def display(self):
-        if self.front == -1:
+        if self.count == 0:
             print("Queue is empty")
             return
-
         print("Queue contents:", end=" ")
-        i = self.front
-        while True:
-            print(self.queue[i], end=" ")
-            if i == self.rear:
-                break
-            i = (i + 1) % self.size
+        for i in range(self.count):
+            print(self.queue[self._idx(i)], end=" ")
         print()

@@ -14,24 +14,32 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem,
     QTableWidget,
     QHeaderView,
+    QAbstractItemView,
 )
-from PyQt5.QtWidgets import QAbstractItemView
 
-from ToExcell import excel, read_all, ensure_workbook
+from Product import Product, save_products, load_products
+from Queue import CircularQueue
+from Tracker import update_all_products
+
+
+def _to_str(v):
+    return "" if v is None else str(v)
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        self.products: list[Product] = []
         self.setWindowTitle("Products")
         self.setGeometry(200, 200, 1000, 500)
 
         self.InitUI()
-
-        # Ensure workbook exists and load existing rows
-        ensure_workbook()
-        self.load_from_xlsx()
+        # JSON only: load what we have
+        self.load_from_json()
+        # Optional: scrape immediately, then refresh UI
+        update_all_products("data.json")
+        self.load_from_json()
 
     def InitUI(self):
         self.name_box = QLineEdit()
@@ -43,28 +51,30 @@ class MainWindow(QMainWindow):
         self.add_button = QPushButton("Add Product", self)
         self.add_button.clicked.connect(self.add_click)
 
-        # NEW: Remove button
         self.remove_button = QPushButton("Remove Selected", self)
         self.remove_button.clicked.connect(self.remove_selected)
 
-        # Table with 2 columns
+        self.refresh_button = QPushButton("Refresh Prices", self)
+        self.refresh_button.clicked.connect(self.refresh_prices)
+
         self.product_table = QTableWidget()
         self.product_table.setColumnCount(5)
-        self.product_table.setHorizontalHeaderLabels(["Product Name", "Product URL","Current Price","Daily Change","Max Change"])
+        self.product_table.setHorizontalHeaderLabels(
+            ["Product Name", "Product URL", "Current Price", "Change", "Max Change"]
+        )
         self.product_table.horizontalHeader().setStretchLastSection(True)
         self.product_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
-        # Better selection UX for row deletion
         self.product_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.product_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.product_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
-        # Layouts
         info_layout = QHBoxLayout()
         info_layout.addWidget(self.name_box)
         info_layout.addWidget(self.url_box)
         info_layout.addWidget(self.add_button)
-        info_layout.addWidget(self.remove_button)  # add the Remove button to the toolbar
+        info_layout.addWidget(self.remove_button)
+        info_layout.addWidget(self.refresh_button)
 
         list_layout = QHBoxLayout()
         list_layout.addWidget(self.product_table)
@@ -77,14 +87,17 @@ class MainWindow(QMainWindow):
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
-    def load_from_xlsx(self):
-        """Load all existing rows from products.xlsx into the table."""
+    def load_from_json(self):
+        self.products = load_products()
         self.product_table.setRowCount(0)
-        for name, url in read_all():
-            row_position = self.product_table.rowCount()
-            self.product_table.insertRow(row_position)
-            self.product_table.setItem(row_position, 0, QTableWidgetItem(name or ""))
-            self.product_table.setItem(row_position, 1, QTableWidgetItem(url or ""))
+        for p in self.products:
+            row = self.product_table.rowCount()
+            self.product_table.insertRow(row)
+            self.product_table.setItem(row, 0, QTableWidgetItem(_to_str(p.get_name())))
+            self.product_table.setItem(row, 1, QTableWidgetItem(_to_str(p.get_url())))
+            self.product_table.setItem(row, 2, QTableWidgetItem(_to_str(p.get_current())))
+            self.product_table.setItem(row, 3, QTableWidgetItem(_to_str(p.get_change())))
+            self.product_table.setItem(row, 4, QTableWidgetItem(_to_str(p.get_max_change())))
 
     @pyqtSlot()
     def add_click(self):
@@ -98,28 +111,21 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Missing URL", "Please enter the product URL.")
             return
 
-        # 1) Persist immediately to products.xlsx
-        try:
-            excel(name, url)
-        except Exception as e:
-            QMessageBox.critical(self, "Save error", f"Could not write to Excel:\n{e}")
-            return
+        queue = CircularQueue(30)
+        product = Product(name, url, queue)
+        self.products.append(product)
 
-        # 2) Append to UI table
-        row_position = self.product_table.rowCount()
-        self.product_table.insertRow(row_position)
-        self.product_table.setItem(row_position, 0, QTableWidgetItem(name))
-        self.product_table.setItem(row_position, 1, QTableWidgetItem(url))
+        # Persist immediately (prevents losing data on crash)
+        self.save_products_to_json()
 
-        # 3) Clear inputs
+        # Scrape & refresh UI
+        update_all_products("data.json")
+        self.load_from_json()
+
         self.name_box.clear()
         self.url_box.clear()
 
-    # =========================
-    # NEW: Remove functionality
-    # =========================
     def remove_selected(self):
-        """Remove selected rows from the table and rewrite products.xlsx."""
         model = self.product_table.selectionModel()
         selected = model.selectedRows() if model else []
 
@@ -128,45 +134,32 @@ class MainWindow(QMainWindow):
             return
 
         rows = sorted([idx.row() for idx in selected], reverse=True)
-
         confirm = QMessageBox.question(
-            self,
-            "Confirm Deletion",
+            self, "Confirm Deletion",
             f"Are you sure you want to delete {len(rows)} product(s)?",
             QMessageBox.Yes | QMessageBox.No
         )
         if confirm != QMessageBox.Yes:
             return
 
-        # Remove from table (from bottom to top to keep indices valid)
+        # Remove from in-memory list and table
         for r in rows:
+            if 0 <= r < len(self.products):
+                self.products.pop(r)
             self.product_table.removeRow(r)
 
-        # Rewrite Excel to mirror the current table
-        try:
-            self.save_table_to_excel()
-        except Exception as e:
-            QMessageBox.critical(self, "Excel Error", f"Failed to update products.xlsx:\n{e}")
+        # Persist the new list (IMPORTANT — this was missing)
+        self.save_products_to_json()
 
-    def save_table_to_excel(self):
-        """Rewrite products.xlsx from the current table contents."""
-        from openpyxl import Workbook
+    def refresh_prices(self):
+        update_all_products("data.json")
+        self.load_from_json()
 
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Products"
-        # Keep header compatible with Tracker.py and ToExcell.py
-        ws.append(["Item", "URL", "Price"])
-
-        for row in range(self.product_table.rowCount()):
-            name_item = self.product_table.item(row, 0)
-            url_item = self.product_table.item(row, 1)
-            name = name_item.text() if name_item else ""
-            url = url_item.text() if url_item else ""
-            ws.append([name, url, None])
-
-        wb.save("products.xlsx")
-        wb.close()
+    def save_products_to_json(self):
+        # Never pass None; always a list (even empty).
+        # If you DON’T want to allow wiping file when empty, early return here.
+        # if not self.products: return
+        save_products(self.products)
 
 
 if __name__ == "__main__":
