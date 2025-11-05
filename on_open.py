@@ -8,8 +8,7 @@ from typing import Optional
 
 update_all_products("data.json")
 
-products : list[Product] = []
-products = load_products("data.json")
+load_products("data.json")
 
 def _effective_threshold_for(p: Product, default_threshold: float = 10.0) -> float:
     """
