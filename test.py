@@ -101,3 +101,14 @@ def test_find_changed_products_abs_value_for_drop_and_rise():
     results = find_changed_products([rising, falling], default_threshold=0.0)
     names = {r[0] for r in results}
     assert names == {"Up", "Down"}
+
+if __name__ == "__main__":
+    test_effective_threshold_default_when_none_set()
+    test_effective_threshold_uses_max_of_two()
+    test_effective_threshold_ignores_negative_or_non_numeric()
+    test_find_changed_products_includes_item_when_change_meets_threshold()
+    test_find_changed_products_excludes_item_below_threshold()
+    test_find_changed_products_uses_default_threshold_when_not_set()
+    test_find_changed_products_handles_missing_change_gracefully()
+    test_find_changed_products_abs_value_for_drop_and_rise()
+    print("All tests passed!")
