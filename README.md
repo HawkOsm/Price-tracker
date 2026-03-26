@@ -1,60 +1,44 @@
-# 🛒 Product Price Tracker
+# 🛒 Professional Product Price Tracker
 
-This is a simple **Python-based price tracking application** with a GUI built using **PyQt5** and Excel integration via **xlsxwriter** and **openpyxl**.
-It allows you to:
-
-* Add product names and URLs via a user-friendly GUI
-* Automatically save them into an Json file
-* Periodically fetch current prices from each URL and update them in json
-
----
+A professional-grade price tracking application with a modern GUI, asynchronous scraper, and persistent SQLite database.
 
 ## ⚙️ Features
-
-* **GUI (PyQt5):**
-  Add product name + URL easily.
-* **Excel logging:**
-  Saves all data to json automatically.
-* **Web scraping:**
-  Fetches the latest price from each product page using `requests` and `BeautifulSoup`.
-* **Auto-update function:**
-  With on_opem.py the preferd products will updated an notify user on change
-  
-
----
-
+- **Modern UI (PyQt6 + qt-material):** Professional dark theme, interactive tables, and integrated price history graphs (Matplotlib).
+- **Asynchronous Scraper (httpx):** High-performance scraping with support for international currency formats and custom CSS selectors.
+- **Persistent Storage (SQLAlchemy):** SQLite-backed database to track long-term price trends and multiple products efficiently.
+- **Background Automation (APScheduler):** Automatic periodic price checks with desktop notifications.
+- **Ubuntu/Linux Integration:** Easy setup with systemd/desktop integration script.
+- **Clean Code Architecture:** Modular design following professional standards.
 
 ## 🧠 Technical Details
+### Project Structure
+- `/core`: Scraper logic (`scraper.py`), Database models (`models.py`), and Database configuration (`database.py`).
+- `/ui`: PyQt6 interface (`main_window.py`).
+- `/services`: Background scheduler (`scheduler.py`) and Notification logic (`notifier.py`).
+- `/utils`: Common helpers and logger setup (`helpers.py`).
+- `main.py`: Main application entry point.
 
+## 🚀 Getting Started
+### Prerequisites
+Ensure you have the required dependencies:
+```bash
+pip install sqlalchemy httpx apscheduler qt-material pyqt6 matplotlib qasync beautifulsoup4 lxml
+```
 
-* **`GUI.py`**
+### Installation & Run
+1. Run the application:
+   ```bash
+   python3 main.py
+   ```
+2. For Ubuntu integration:
+   ```bash
+   chmod +x setup_service.sh
+   ./setup_service.sh
+   ```
 
-  * Built with PyQt5
-  * Uses `QTableWidget` to display products
-  * Gracefully closes workbook on app exit
-
-* **`Tracker.py`**
-
-  * Scrapes price info using `requests` + `BeautifulSoup`
-  * Automatically updates latest prices
-
----
-
-## 💡 Notes & Recommendations
-
-* **Respect websites’ terms of service.**
-  Do not scrape aggressively or too frequently.
-* **Add delay between requests** (`delay_s` parameter in `Tracker.py`) to avoid rate limits.
-* **If pages require JavaScript rendering** (e.g., dynamic prices), consider using `Selenium` or `Playwright`.
-* **Backup your Excel file** occasionally — each run updates prices in place.
-* **Optional startup automation:**
-  You can schedule `Tracker.py` with **Windows Task Scheduler** or `crontab` to auto-run daily.
-
----
+## 📜 Notes
+- Always respect websites' terms of service.
+- Use custom CSS selectors for unsupported sites for more accurate scraping.
 
 ## 📜 License
-
-This mini project is for **educational and personal use**.
-You are free to modify and extend it.
-
----
+Educational and personal use.
